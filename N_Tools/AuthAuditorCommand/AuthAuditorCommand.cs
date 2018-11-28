@@ -98,7 +98,7 @@ namespace N_Tools.AuthAuditorCommand
             string projectPath = null;
             string projectName = null;
 
-            for (var i=1; i <= targetProject.Properties.Count; i++)
+            for (var i = 1; i <= targetProject.Properties.Count; i++)
             {
                 if (targetProject.Properties.Item(i).Name == "FullPath")
                     projectPath = targetProject.Properties.Item(i).Value.ToString();
@@ -106,15 +106,15 @@ namespace N_Tools.AuthAuditorCommand
                     projectName = targetProject.Properties.Item(i).Value.ToString();
             }
 
-            Microsoft.CodeAnalysis.Project currProject = workspace.OpenProjectAsync(projectPath + projectName).Result;
-            var projectCompilation = currProject.GetCompilationAsync().Result;
+            Microsoft.CodeAnalysis.Project currentProject = workspace.OpenProjectAsync(projectPath + projectName).Result;
+            var projectCompilation = currentProject.GetCompilationAsync().Result;
             var assemblyTypes = projectCompilation.Assembly.TypeNames;
             var namedSymbols = assemblyTypes.Select(type => (INamedTypeSymbol)projectCompilation.GetSymbolsWithName(symbolName => symbolName == type).Where(symbol => symbol.Kind == SymbolKind.NamedType).First());
-            var controllerSymbols = namedSymbols.Where(symbol => CheckTypeIsInheritedFromBaseController(symbol)).ToList();
+            var controllerSymbols = namedSymbols.Where(symbol => CheckTypeIsOrInheritedFromController(symbol)).ToList();
 
             var controllerMethodsCollection = new Dictionary<INamedTypeSymbol, IEnumerable<IMethodSymbol>>();
 
-            foreach(var controller in controllerSymbols)
+            foreach (var controller in controllerSymbols)
             {
                 var isAuthorized = CheckControllerIsOrInheritedFromAuthorizedController(controller);
                 var controllerActionMethods = controller.GetMembers()
@@ -132,12 +132,12 @@ namespace N_Tools.AuthAuditorCommand
             OutputWindowPanes panes = dte.ToolWindows.OutputWindow.OutputWindowPanes;
             OutputWindowPane outputPane;
             try
-            { 
-                outputPane = panes.Item("N-ToolsPane");
+            {
+                outputPane = panes.Item("N-Tools");
             }
             catch (ArgumentException)
-            {  
-                outputPane = panes.Add("N-ToolsPane");
+            {
+                outputPane = panes.Add("N-Tools");
             }
             outputPane.Activate();
             foreach (var record in controllerMethodsCollection)
@@ -155,15 +155,17 @@ namespace N_Tools.AuthAuditorCommand
             }
         }
 
-        private bool CheckTypeIsInheritedFromBaseController(INamedTypeSymbol typeSymbol)
+        private bool CheckTypeIsOrInheritedFromController(INamedTypeSymbol typeSymbol)
         {
+            if (typeSymbol.GetAttributes().Any(attribute => attribute.AttributeClass.Name == "ApiControllerAttribute"))
+                return true;
             if (typeSymbol.BaseType != null)
             {
                 var result = false;
                 if (typeSymbol.BaseType.Name == "ControllerBase")
                     result = true;
                 else
-                    result = CheckTypeIsInheritedFromBaseController(typeSymbol.BaseType);
+                    result = CheckTypeIsOrInheritedFromController(typeSymbol.BaseType);
 
                 return result;
             }
@@ -173,12 +175,12 @@ namespace N_Tools.AuthAuditorCommand
 
         private bool CheckControllerIsOrInheritedFromAuthorizedController(INamedTypeSymbol typeSymbol)
         {
-            if (typeSymbol.GetAttributes().Any(attribute => attribute.AttributeClass.Name == "AuthorizedAttribute"))
+            if (typeSymbol.GetAttributes().Any(attribute => attribute.AttributeClass.Name == "AuthorizeAttribute"))
                 return true;
-            if (typeSymbol.GetAttributes().All(attribute => attribute.AttributeClass.Name != "AuthorizedAttribute")
+            if (typeSymbol.GetAttributes().All(attribute => attribute.AttributeClass.Name != "AuthorizeAttribute")
                 && typeSymbol.BaseType == null)
                 return false;
-            return CheckTypeIsInheritedFromBaseController(typeSymbol.BaseType);
+            return CheckControllerIsOrInheritedFromAuthorizedController(typeSymbol.BaseType);
         }
     }
 }
